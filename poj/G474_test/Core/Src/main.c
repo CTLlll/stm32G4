@@ -19,6 +19,7 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "adc.h"
+#include "dac.h"
 #include "dma.h"
 #include "hrtim.h"
 #include "i2c.h"
@@ -30,10 +31,35 @@
 /* USER CODE BEGIN Includes */
 #include "delay_us.h"
 #include "stdio.h"
+#include "string.h"
+#include <math.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
+//#define SINE_RESOLUTION 128  // point number of sin wave
+
+#define SINE_RESOLUTION 512 // point number of sin wave
+#define PWM_MAX 1000   
+#define PHASE_STEP (1700 / 512) // ????????
+uint16_t sine_wave[SINE_RESOLUTION];
+
+volatile uint32_t current_phase_index = 0;
+volatile uint8_t pwm_running = 0;
+volatile uint32_t phase_A1_SHIFT, phase_A2_SHIFT, phase_A3_SHIFT, phase_A4_SHIFT;
+volatile uint8_t update_phase_flag = 0;
+volatile uint8_t tim2_flag = 0;   // TIM2 ????????
+volatile uint8_t tim3_flag = 0;   // TIM3 ????????
+volatile uint16_t move_count = 0; // ?????
+extern UART_HandleTypeDef huart1; 
+
+
+//volatile uint32_t current_phase_index = 0;  // ????????
+//volatile uint32_t pwm_period = 1700;        // PWM ??(??????????)
+//volatile uint8_t pwm_running = 0;
+
+//uint16_t shifted_sine_wave[SINE_RESOLUTION];
+
 int fputc(int ch, FILE *f) {
     // ?? HAL ??????? UART
     HAL_UART_Transmit(&huart1, (uint8_t *)&ch, 1, HAL_MAX_DELAY);
@@ -43,11 +69,10 @@ int fputc(int ch, FILE *f) {
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-uint32_t phase_A1_SHIFT;
-uint32_t phase_A2_SHIFT;
-uint32_t phase_A3_SHIFT;
-uint32_t phase_A4_SHIFT;
 
+#ifndef M_PI
+#define M_PI 3.14159265358979323846  // ????? p
+#endif
 //uint32_t phase_A1,phase_A2,phase_A3,phase_A4;
 /* USER CODE END PD */
 
@@ -65,13 +90,237 @@ uint32_t phase_A4_SHIFT;
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 /* USER CODE BEGIN PFP */
-void start_module_A(void);
-void phase_shift_A(uint32_t period_set_A,uint32_t phase_A1,uint32_t phase_A2,uint32_t phase_A3,uint32_t phase_A4);
 
+
+void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim);
+//void Generate_Sine_Wave(void);
+//void start_module_A(void);
+//void stop_module_A(void);
+
+
+////void Update_PWM_Phase(uint16_t sine_value);
+//void Update_PWM_Phase(uint16_t sine_value);
+//void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim);
+//void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim);
+//void phase_shift_A(uint32_t period_set_A,uint32_t phase_A1,uint32_t phase_A2,uint32_t phase_A3,uint32_t phase_A4);
+//void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+// Function to generate a sine wave with SINE_RESOLUTION points
+
+//void Update_PWM_Phase(uint16_t sine_value) {
+//    uint32_t phase_shift = (sine_value * pwm_period) / 4095;  // ???????? [0, pwm_period/2]
+//    uint32_t half_period = pwm_period / 2;
+
+//    HRTIM_CompareCfgTypeDef pCompareCfg = {0};
+
+//    // ??? A ???????(50% ???)
+//    pCompareCfg.CompareValue = phase_shift;  // ???
+//    HAL_HRTIM_WaveformCompareConfig(&hhrtim1, HRTIM_TIMERINDEX_TIMER_A, HRTIM_COMPAREUNIT_1, &pCompareCfg);
+
+//    pCompareCfg.CompareValue = (phase_shift + half_period) % pwm_period;  // ?????????
+//    HAL_HRTIM_WaveformCompareConfig(&hhrtim1, HRTIM_TIMERINDEX_TIMER_A, HRTIM_COMPAREUNIT_2, &pCompareCfg);
+
+//    // ??? B ???????(??)
+//    pCompareCfg.CompareValue = (phase_shift + half_period) % pwm_period;  // ???
+//    HAL_HRTIM_WaveformCompareConfig(&hhrtim1, HRTIM_TIMERINDEX_TIMER_B, HRTIM_COMPAREUNIT_1, &pCompareCfg);
+
+//    pCompareCfg.CompareValue = (phase_shift + pwm_period) % pwm_period;  // ?????????
+//    HAL_HRTIM_WaveformCompareConfig(&hhrtim1, HRTIM_TIMERINDEX_TIMER_B, HRTIM_COMPAREUNIT_2, &pCompareCfg);
+//}
+
+//// ?? PWM ????(??????)
+//void Update_PWM_Phase(uint16_t sine_value) {
+//    uint32_t phase_shift = (sine_value * pwm_period) / 4095;  // ???????? [0, pwm_period/2]
+
+//    // ????? A ?????
+//    HRTIM_CompareCfgTypeDef pCompareCfg = {0};
+//    pCompareCfg.CompareValue = phase_shift;  // ????
+//    HAL_HRTIM_WaveformCompareConfig(&hhrtim1, HRTIM_TIMERINDEX_TIMER_A, HRTIM_COMPAREUNIT_1, &pCompareCfg);
+
+//    // ????? B ?????(????)
+//    pCompareCfg.CompareValue = phase_shift + (pwm_period / 2);  // 180? ??
+//    HAL_HRTIM_WaveformCompareConfig(&hhrtim1, HRTIM_TIMERINDEX_TIMER_B, HRTIM_COMPAREUNIT_1, &pCompareCfg);
+//}
+
+// ??????????
+//void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim) {
+//    if (htim->Instance == TIM2 && htim->Channel == HAL_TIM_ACTIVE_CHANNEL_1) {
+//        if (!pwm_running) {
+//            pwm_running = 1;  // ??:???? PWM
+
+//            // ???????
+//            current_phase_index = 0;
+
+//            // ?? HRTIM ??
+//            start_module_A();
+
+//            // ??? PWM ??(?????)
+//            Update_PWM_Phase(sine_wave[current_phase_index], 0); // ???????,????? 0
+
+//            // ?????,????????????
+//            HAL_TIM_Base_Start_IT(&htim3);
+//        }
+//    }
+//}
+//void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim) {
+//    if (htim->Instance == TIM2 && htim->Channel == HAL_TIM_ACTIVE_CHANNEL_1) {
+//        // ??????,????????? PWM ??
+//        if (!pwm_running) {
+//            pwm_running = 1;  // ??:???? PWM
+
+//            // ???????
+//            current_phase_index = 0;
+
+//            // ?? HRTIM ??
+//            start_module_A();
+
+//            // ???? PWM ??
+//            HAL_TIM_Base_Start_IT(&htim3);  // ?????,????????????
+//        }
+//    }
+//}
+
+// ?????:???? PWM ??
+//void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
+//    if (htim->Instance == TIM3) {
+//        if (pwm_running) {
+//            // ??????????
+//            uint16_t current_sine_value = sine_wave[current_phase_index];
+
+//            // ?? PWM ??
+//            Update_PWM_Phase(current_sine_value, 0);
+
+//            // ??????????
+//            current_phase_index++;
+
+//            // ????????,?? PWM
+//            if (current_phase_index >= SINE_RESOLUTION) {
+//                pwm_running = 0;  // ??:?? PWM
+//                HAL_TIM_Base_Stop_IT(&htim3);  // ?????
+//                stop_module_A();  // ?? PWM ??
+//            }
+//        }
+//    }
+//}
+
+//void start_module_A(void)
+//	{		
+//	HAL_HRTIM_WaveformCounterStart(&hhrtim1,HRTIM_TIMERID_MASTER|HRTIM_TIMERID_TIMER_A|
+//		HRTIM_TIMERID_TIMER_B|HRTIM_TIMERID_TIMER_C|HRTIM_TIMERID_TIMER_D);
+//		
+//		HAL_HRTIM_WaveformOutputStart(&hhrtim1,HRTIM_OUTPUT_TA1);
+//		HAL_HRTIM_WaveformOutputStart(&hhrtim1,HRTIM_OUTPUT_TA2);
+//		
+//		HAL_HRTIM_WaveformOutputStart(&hhrtim1,HRTIM_OUTPUT_TB1);
+//		HAL_HRTIM_WaveformOutputStart(&hhrtim1,HRTIM_OUTPUT_TB2);
+//		
+//		HAL_HRTIM_WaveformOutputStart(&hhrtim1,HRTIM_OUTPUT_TC1);
+//		HAL_HRTIM_WaveformOutputStart(&hhrtim1,HRTIM_OUTPUT_TC2);
+//		
+//		HAL_HRTIM_WaveformOutputStart(&hhrtim1,HRTIM_OUTPUT_TD1);		
+//		HAL_HRTIM_WaveformOutputStart(&hhrtim1,HRTIM_OUTPUT_TD2);
+//	}
+
+//	
+//void phase_shift_A(uint32_t period_set_A,uint32_t phase_A1,uint32_t phase_A2,uint32_t phase_A3,uint32_t phase_A4)
+//	{
+//	HRTIM_TimeBaseCfgTypeDef pTimeBaseCfg = {0};
+//	HRTIM_TimerCfgTypeDef pTimerCfg = {0};
+//	HRTIM_CompareCfgTypeDef pCompareCfg = {0};
+//	HRTIM_TimerCtlTypeDef pTimerCtl = {0};
+//	HRTIM_DeadTimeCfgTypeDef pDeadTimeCfg = {0};
+//	HRTIM_OutputCfgTypeDef pOutputCfg = {0};
+//	
+//	phase_A1_SHIFT = period_set_A*phase_A1/360;
+//	phase_A2_SHIFT = period_set_A*phase_A2/360;
+//	phase_A3_SHIFT = period_set_A*phase_A3/360;
+//	phase_A4_SHIFT = period_set_A*phase_A4/360; //transfer degree to pulse
+//	
+//	pCompareCfg.CompareValue = phase_A1_SHIFT;
+//	HAL_HRTIM_WaveformCompareConfig(&hhrtim1,HRTIM_TIMERINDEX_MASTER,HRTIM_COMPAREUNIT_1,&pCompareCfg);
+//	pCompareCfg.CompareValue = phase_A1_SHIFT + period_set_A/2;
+//	HAL_HRTIM_WaveformCompareConfig(&hhrtim1,HRTIM_TIMERINDEX_TIMER_A,HRTIM_COMPAREUNIT_1,&pCompareCfg);
+//	
+//	pCompareCfg.CompareValue = phase_A2_SHIFT;
+//	HAL_HRTIM_WaveformCompareConfig(&hhrtim1,HRTIM_TIMERINDEX_MASTER,HRTIM_COMPAREUNIT_2,&pCompareCfg);
+//	pCompareCfg.CompareValue = phase_A2_SHIFT + period_set_A/2;
+//	HAL_HRTIM_WaveformCompareConfig(&hhrtim1,HRTIM_TIMERINDEX_TIMER_B,HRTIM_COMPAREUNIT_1,&pCompareCfg);
+//	
+//	pCompareCfg.CompareValue = phase_A3_SHIFT;
+//	HAL_HRTIM_WaveformCompareConfig(&hhrtim1,HRTIM_TIMERINDEX_MASTER,HRTIM_COMPAREUNIT_3,&pCompareCfg);
+//	pCompareCfg.CompareValue = phase_A3_SHIFT + period_set_A/2;
+//	HAL_HRTIM_WaveformCompareConfig(&hhrtim1,HRTIM_TIMERINDEX_TIMER_C,HRTIM_COMPAREUNIT_1,&pCompareCfg);
+//	
+//	pCompareCfg.CompareValue = phase_A4_SHIFT;
+//	HAL_HRTIM_WaveformCompareConfig(&hhrtim1,HRTIM_TIMERINDEX_MASTER,HRTIM_COMPAREUNIT_4,&pCompareCfg);
+//	pCompareCfg.CompareValue = phase_A4_SHIFT + period_set_A/2;
+//	HAL_HRTIM_WaveformCompareConfig(&hhrtim1,HRTIM_TIMERINDEX_TIMER_D,HRTIM_COMPAREUNIT_1,&pCompareCfg);
+//	}
+//	
+//void Generate_Sine_Wave(void) {
+//    for (int i = 0; i < SINE_RESOLUTION; i++) {
+//        // ????? 0-4095 ?????
+//        sine_wave[i] = (uint16_t)((sin(2 * M_PI * i / SINE_RESOLUTION) + 1) * 2047*0.8);
+//    }
+//}
+
+//void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim) {
+//    if (htim->Instance == TIM2 && htim->Channel == HAL_TIM_ACTIVE_CHANNEL_1) {
+//        // ?????????,?? TIM3 ? DAC ??
+
+//        // Step 1: ?? TIM3
+//        HAL_TIM_Base_Stop(&htim3);  // ?? TIM3
+//        __HAL_TIM_SET_COUNTER(&htim3, 0);  // ?????
+
+//        // Step 2: ?? DAC ? DMA
+//        HAL_DAC_Stop_DMA(&hdac1, DAC_CHANNEL_1);
+
+//        // Step 3: ???? TIM3
+//        HAL_TIM_Base_Start(&htim3);
+
+//        // Step 4: ???? DAC ? DMA ??
+//        HAL_DAC_Start_DMA(&hdac1, DAC_CHANNEL_1, (uint32_t *)sine_wave, SINE_RESOLUTION, DAC_ALIGN_12B_R);
+//    }
+//}
+
+
+//void phase_shift_A(uint32_t period_set_A, uint32_t phase_A1, uint32_t phase_A2, uint32_t phase_A3, uint32_t phase_A4);
+//void start_pwm(void);
+//void stop_pwm(void);
+//void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim);
+
+
+void Generate_Sine_Wave() {
+    for (int i = 0; i < SINE_RESOLUTION; i++) {
+        // ??????,????? [0, PWM_MAX]
+        sine_wave[i] = (uint16_t)((sin(i * 2.0 * M_PI / SINE_RESOLUTION) + 1) * 0.5 * PWM_MAX);
+    }
+}
+
+void Print_Sine_Wave() {
+    printf("\r\nSine Wave Table (Resolution: %d, Max Value: %d):\r\n", SINE_RESOLUTION, PWM_MAX);
+    for (int i = 0; i < SINE_RESOLUTION; i++) {
+        printf("Index %d: %d\r\n", i, sine_wave[i]);  // ??????????
+    }
+    printf("\r\nSine Wave Table Output Complete.\r\n");
+}
+
+/* ??HRTIM?? */
+//void start_module_A(void) {
+//    HAL_HRTIM_WaveformCounterStart(&hhrtim1, 
+//        HRTIM_TIMERID_MASTER | HRTIM_TIMERID_TIMER_A | 
+//        HRTIM_TIMERID_TIMER_B | HRTIM_TIMERID_TIMER_C | 
+//        HRTIM_TIMERID_TIMER_D);
+//    
+//    HAL_HRTIM_WaveformOutputStart(&hhrtim1, HRTIM_OUTPUT_TA1);
+//    HAL_HRTIM_WaveformOutputStart(&hhrtim1, HRTIM_OUTPUT_TB1);
+//    HAL_HRTIM_WaveformOutputStart(&hhrtim1, HRTIM_OUTPUT_TC1);
+//    HAL_HRTIM_WaveformOutputStart(&hhrtim1, HRTIM_OUTPUT_TD1);
+//}
+
 void start_module_A(void)
 	{		
 	HAL_HRTIM_WaveformCounterStart(&hhrtim1,HRTIM_TIMERID_MASTER|HRTIM_TIMERID_TIMER_A|
@@ -90,49 +339,106 @@ void start_module_A(void)
 		HAL_HRTIM_WaveformOutputStart(&hhrtim1,HRTIM_OUTPUT_TD2);
 	}
 
+/* ?????? */
 	
-void phase_shift_A(uint32_t period_set_A,uint32_t phase_A1,uint32_t phase_A2,uint32_t phase_A3,uint32_t phase_A4)
-	{
-	HRTIM_TimeBaseCfgTypeDef pTimeBaseCfg = {0};
-	HRTIM_TimerCfgTypeDef pTimerCfg = {0};
-	HRTIM_CompareCfgTypeDef pCompareCfg = {0};
-	HRTIM_TimerCtlTypeDef pTimerCtl = {0};
-	HRTIM_DeadTimeCfgTypeDef pDeadTimeCfg = {0};
-	HRTIM_OutputCfgTypeDef pOutputCfg = {0};
 	
-	phase_A1_SHIFT = period_set_A*phase_A1/360;
-	phase_A2_SHIFT = period_set_A*phase_A2/360;
-	phase_A3_SHIFT = period_set_A*phase_A3/360;
-	phase_A4_SHIFT = period_set_A*phase_A4/360; //transfer degree to pulse
-	
-	pCompareCfg.CompareValue = phase_A1_SHIFT;
-	HAL_HRTIM_WaveformCompareConfig(&hhrtim1,HRTIM_TIMERINDEX_MASTER,HRTIM_COMPAREUNIT_1,&pCompareCfg);
-	pCompareCfg.CompareValue = phase_A1_SHIFT + period_set_A/2;
-	HAL_HRTIM_WaveformCompareConfig(&hhrtim1,HRTIM_TIMERINDEX_TIMER_A,HRTIM_COMPAREUNIT_1,&pCompareCfg);
-	
-	pCompareCfg.CompareValue = phase_A2_SHIFT;
-	HAL_HRTIM_WaveformCompareConfig(&hhrtim1,HRTIM_TIMERINDEX_MASTER,HRTIM_COMPAREUNIT_2,&pCompareCfg);
-	pCompareCfg.CompareValue = phase_A2_SHIFT + period_set_A/2;
-	HAL_HRTIM_WaveformCompareConfig(&hhrtim1,HRTIM_TIMERINDEX_TIMER_B,HRTIM_COMPAREUNIT_1,&pCompareCfg);
-	
-	pCompareCfg.CompareValue = phase_A3_SHIFT;
-	HAL_HRTIM_WaveformCompareConfig(&hhrtim1,HRTIM_TIMERINDEX_MASTER,HRTIM_COMPAREUNIT_3,&pCompareCfg);
-	pCompareCfg.CompareValue = phase_A3_SHIFT + period_set_A/2;
-	HAL_HRTIM_WaveformCompareConfig(&hhrtim1,HRTIM_TIMERINDEX_TIMER_C,HRTIM_COMPAREUNIT_1,&pCompareCfg);
-	
-	pCompareCfg.CompareValue = phase_A4_SHIFT;
-	HAL_HRTIM_WaveformCompareConfig(&hhrtim1,HRTIM_TIMERINDEX_MASTER,HRTIM_COMPAREUNIT_4,&pCompareCfg);
-	pCompareCfg.CompareValue = phase_A4_SHIFT + period_set_A/2;
-	HAL_HRTIM_WaveformCompareConfig(&hhrtim1,HRTIM_TIMERINDEX_TIMER_D,HRTIM_COMPAREUNIT_1,&pCompareCfg);
-	}
+//    pCompareCfg.CompareValue = 1700  / 360;
+//    HAL_HRTIM_WaveformCompareConfig(&hhrtim1, HRTIM_TIMERINDEX_MASTER, 
+//        HRTIM_COMPAREUNIT_1, &pCompareCfg);
+//    pCompareCfg.CompareValue = 1700 / 360 + 850;
+//    HAL_HRTIM_WaveformCompareConfig(&hhrtim1, HRTIM_TIMERINDEX_TIMER_A, 
+//        HRTIM_COMPAREUNIT_1, &pCompareCfg);
+//    
+  
 
-//uint32_t adc_value = 0;
-//uint32_t phase_offset = 0;
 
-//uint32_t ch1_phase = 0;
-//uint32_t ch2_phase = 0;
+void phase_shift_A(uint32_t period_set_A, uint32_t phase_A1,uint32_t phase_A2, 
+    uint32_t phase_A3, uint32_t phase_A4) {
+    HRTIM_TimeBaseCfgTypeDef pTimeBaseCfg = {0};
+    HRTIM_TimerCfgTypeDef pTimerCfg = {0};
+    HRTIM_CompareCfgTypeDef pCompareCfg = {0};
+    HRTIM_TimerCtlTypeDef pTimerCtl = {0};
+    HRTIM_DeadTimeCfgTypeDef pDeadTimeCfg = {0};
+    HRTIM_OutputCfgTypeDef pOutputCfg = {0};
+    
+     phase_A1_SHIFT = (period_set_A * phase_A1 / 360) % period_set_A;  //1700*180/360
+     phase_A2_SHIFT = (period_set_A * phase_A2 / 360) % period_set_A;
+	 phase_A3_SHIFT = (period_set_A * phase_A3 / 360) % period_set_A;
+     phase_A4_SHIFT = (period_set_A * phase_A4 / 360) % period_set_A;
+    
+    pCompareCfg.CompareValue = phase_A1_SHIFT;
+    HAL_HRTIM_WaveformCompareConfig(&hhrtim1, HRTIM_TIMERINDEX_MASTER, 
+        HRTIM_COMPAREUNIT_1, &pCompareCfg);
+    pCompareCfg.CompareValue = phase_A1_SHIFT + period_set_A/2;
+    HAL_HRTIM_WaveformCompareConfig(&hhrtim1, HRTIM_TIMERINDEX_TIMER_A, 
+        HRTIM_COMPAREUNIT_1, &pCompareCfg);
+    
+    pCompareCfg.CompareValue = phase_A2_SHIFT;
+    HAL_HRTIM_WaveformCompareConfig(&hhrtim1, HRTIM_TIMERINDEX_MASTER, 
+        HRTIM_COMPAREUNIT_2, &pCompareCfg);
+    pCompareCfg.CompareValue = phase_A2_SHIFT + period_set_A/2;
+    HAL_HRTIM_WaveformCompareConfig(&hhrtim1, HRTIM_TIMERINDEX_TIMER_B, 
+        HRTIM_COMPAREUNIT_1, &pCompareCfg);
+    
+    pCompareCfg.CompareValue = phase_A3_SHIFT;
+    HAL_HRTIM_WaveformCompareConfig(&hhrtim1, HRTIM_TIMERINDEX_MASTER, 
+        HRTIM_COMPAREUNIT_3, &pCompareCfg);
+    pCompareCfg.CompareValue = phase_A3_SHIFT + period_set_A/2;
+    HAL_HRTIM_WaveformCompareConfig(&hhrtim1, HRTIM_TIMERINDEX_TIMER_C, 
+        HRTIM_COMPAREUNIT_1, &pCompareCfg);
+    
+    pCompareCfg.CompareValue = phase_A4_SHIFT;
+    HAL_HRTIM_WaveformCompareConfig(&hhrtim1, HRTIM_TIMERINDEX_MASTER, 
+        HRTIM_COMPAREUNIT_4, &pCompareCfg);
+    pCompareCfg.CompareValue = phase_A4_SHIFT + period_set_A/2;
+    HAL_HRTIM_WaveformCompareConfig(&hhrtim1, HRTIM_TIMERINDEX_TIMER_D, 
+        HRTIM_COMPAREUNIT_1, &pCompareCfg);
+}
 
-//uint32_t phase_offset = 0;
+/* ???????? */
+void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim) {
+    if (htim->Instance == TIM2 && htim->Channel == HAL_TIM_ACTIVE_CHANNEL_1) {
+        tim2_flag = 1;  // ?? TIM2 ?????
+    }
+}
+
+//void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
+//    if (htim->Instance == TIM3) {
+//        tim3_flag = 1;  // ?? TIM3 ?????
+//    }
+//}
+
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
+    if (htim->Instance == TIM3) {
+       
+
+        
+            // ??????
+            uint32_t period_set_A = 1700;  // HRTIM ???
+            //uint32_t phase_A1_SHIFT = (period_set_A * sine_wave[move_count]) / 2000;  // 1700*1000/1000/2
+		uint32_t phase_A1_SHIFT=200;
+            // ?? Timer A ????
+            HRTIM_CompareCfgTypeDef pCompareCfg = {0};
+            pCompareCfg.CompareValue = phase_A1_SHIFT;
+            HAL_HRTIM_WaveformCompareConfig(&hhrtim1, HRTIM_TIMERINDEX_MASTER, 
+                HRTIM_COMPAREUNIT_2, &pCompareCfg);
+
+            // ?? Timer A ????(?? 50%)
+            pCompareCfg.CompareValue = phase_A1_SHIFT + period_set_A / 2;
+            HAL_HRTIM_WaveformCompareConfig(&hhrtim1, HRTIM_TIMERINDEX_TIMER_B, 
+                HRTIM_COMPAREUNIT_1, &pCompareCfg);
+
+          
+       
+            HAL_TIM_Base_Stop_IT(&htim3);
+			
+        }
+    }
+
+ 
+
+
+
 
 /* USER CODE END 0 */
 
@@ -171,10 +477,25 @@ int main(void)
   MX_USART1_UART_Init();
   MX_ADC1_Init();
   MX_HRTIM1_Init();
+  MX_ADC2_Init();
+  MX_TIM2_Init();
+  MX_TIM3_Init();
+  MX_DAC1_Init();
   /* USER CODE BEGIN 2 */
   
-  start_module_A();  
-  phase_shift_A(1700,20,30,40,20);
+    Generate_Sine_Wave(); // Generate sine wave
+     //Print_Sine_Wave();
+		
+		// HAL_Delay(20);
+    HAL_TIM_IC_Start_IT(&htim2, TIM_CHANNEL_1);
+	
+	
+//  start_module_A();  
+//  phase_shift_A(1700,20,30,40,20);
+ 
+//  int value = 0;       //ADC value
+//  float voltage = 0.0;
+//  char message[20] = "";
 //	HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_1);
 //    HAL_TIMEx_PWMN_Start(&htim1, TIM_CHANNEL_1);
 //	//Delay_us(2);
@@ -186,6 +507,41 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
+	  
+//	  HAL_ADC_Start(&hadc2);
+//	  HAL_ADC_PollForConversion(&hadc2,HAL_MAX_DELAY);
+//	  value = HAL_ADC_GetValue(&hadc2);
+//	  voltage = (value / 4095.0) * 3.3;
+	  
+	  if (tim2_flag) {
+            tim2_flag = 0;  // ?????
+            start_module_A();
+			//
+            phase_shift_A(1700,1,20,50,90);
+        
+		  
+          
+		   while (move_count < 512) {
+            // ?? TIM3 ??,???????
+           // __HAL_TIM_SET_COUNTER(&htim3, 0);    // ?? TIM3 ???
+            HAL_TIM_Base_Start_IT(&htim3);      // ?? TIM3 ??
+
+            // ?? TIM3 ????
+            while (__HAL_TIM_GET_FLAG(&htim3, TIM_FLAG_UPDATE) == RESET) {
+                // ?? TIM3 ????????
+            }
+            __HAL_TIM_CLEAR_FLAG(&htim3, TIM_FLAG_UPDATE);  // ??????
+
+            // ???????
+            move_count++;
+        }
+
+        // 512 ??????,?????
+        move_count = 0;
+		  
+		  
+        }
+		
       //phase_offset += 25;
 	  //phase_offset = 25;
 	  //__HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_2, (850 + phase_offset) % htim1.Init.Period);

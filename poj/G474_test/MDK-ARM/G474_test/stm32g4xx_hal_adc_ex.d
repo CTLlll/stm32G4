@@ -24,6 +24,8 @@ g474_test\stm32g4xx_hal_adc_ex.o: C:/Users/17413/STM32Cube/Repository/STM32Cube_
 g474_test\stm32g4xx_hal_adc_ex.o: C:/Users/17413/STM32Cube/Repository/STM32Cube_FW_G4_V1.6.1/Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_hal_adc.h
 g474_test\stm32g4xx_hal_adc_ex.o: C:/Users/17413/STM32Cube/Repository/STM32Cube_FW_G4_V1.6.1/Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_ll_adc.h
 g474_test\stm32g4xx_hal_adc_ex.o: C:/Users/17413/STM32Cube/Repository/STM32Cube_FW_G4_V1.6.1/Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_hal_adc_ex.h
+g474_test\stm32g4xx_hal_adc_ex.o: C:/Users/17413/STM32Cube/Repository/STM32Cube_FW_G4_V1.6.1/Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_hal_dac.h
+g474_test\stm32g4xx_hal_adc_ex.o: C:/Users/17413/STM32Cube/Repository/STM32Cube_FW_G4_V1.6.1/Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_hal_dac_ex.h
 g474_test\stm32g4xx_hal_adc_ex.o: C:/Users/17413/STM32Cube/Repository/STM32Cube_FW_G4_V1.6.1/Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_hal_exti.h
 g474_test\stm32g4xx_hal_adc_ex.o: C:/Users/17413/STM32Cube/Repository/STM32Cube_FW_G4_V1.6.1/Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_hal_flash.h
 g474_test\stm32g4xx_hal_adc_ex.o: C:/Users/17413/STM32Cube/Repository/STM32Cube_FW_G4_V1.6.1/Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_hal_flash_ex.h
